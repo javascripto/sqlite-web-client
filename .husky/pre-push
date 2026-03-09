@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+
+if [ "$GITHUB_ACTIONS" = "true" ]; then
+  exit 0
+fi
+
+UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+
+if [ -z "$UPSTREAM" ]; then
+  echo "No upstream configured, skipping TypeScript pre-push Biome check."
+  exit 0
+fi
+
+CHANGED_TS_FILES=$(git diff --name-only "$UPSTREAM"...HEAD -- '*.ts' '*.tsx')
+
+if [ -z "$CHANGED_TS_FILES" ]; then
+  echo "No changed .ts/.tsx files to check."
+  exit 0
+fi
+
+npx biome check --write $CHANGED_TS_FILES

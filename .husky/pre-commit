@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+if [ "$GITHUB_ACTIONS" = "true" ]; then
+  exit 0
+fi
+
+npx lint-staged
