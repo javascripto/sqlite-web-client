@@ -3,7 +3,7 @@ export type DbObjectType = 'table' | 'view';
 export interface DbObjectItem {
   name: string;
   type: DbObjectType;
-  estimatedRows: number;
+  estimatedRows: number | null;
 }
 
 export interface QueryLogItem {
@@ -21,6 +21,7 @@ export type DataRow = Record<string, string | number | null>;
 export interface TableData {
   columns: string[];
   rows: DataRow[];
+  totalRows: number;
 }
 
 export type TableDataset = Record<string, TableData>;
@@ -37,6 +38,10 @@ export interface SessionState {
   page: number;
   pageSize: number;
   selectedRowIndex: number | null;
+  activeTableData: TableData | null;
+  isLoadingTableData: boolean;
+  isOpeningDatabase: boolean;
+  statusMessage: string | null;
   isExplorerVisible: boolean;
   isSqlConsoleVisible: boolean;
 }

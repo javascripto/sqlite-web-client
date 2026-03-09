@@ -1,5 +1,4 @@
 import { Play } from 'lucide-react';
-import { toast } from 'sonner';
 
 import { useSession } from '@/app/session/session-provider';
 import { Button } from '@/components/ui/button';
@@ -7,31 +6,10 @@ import { Textarea } from '@/components/ui/textarea';
 
 export function SqlConsolePane() {
   const {
-    state: { queryText, queryLog, activeObject },
+    state: { queryText, queryLog },
     dispatch,
+    runSql,
   } = useSession();
-
-  const runQuery = () => {
-    const now = new Date();
-    const durationMs = 8 + Math.round(Math.random() * 22);
-    const rows = activeObject ? 30 : 0;
-
-    dispatch({
-      type: 'RUN_QUERY',
-      payload: {
-        id: `${now.getTime()}`,
-        sql: queryText,
-        ranAt: now.toISOString(),
-        durationMs,
-        rows,
-        status: 'ok',
-      },
-    });
-
-    toast.success('Query executada', {
-      description: `${rows.toLocaleString('en-US')} rows em ${durationMs} ms`,
-    });
-  };
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_1fr] bg-background p-3">
@@ -42,7 +20,7 @@ export function SqlConsolePane() {
         <Button
           size="sm"
           className="h-7 bg-blue-700 text-xs hover:bg-blue-600"
-          onClick={runQuery}
+          onClick={() => void runSql()}
         >
           <Play className="size-3.5" />
           Run
@@ -71,7 +49,7 @@ export function SqlConsolePane() {
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {new Date(item.ranAt).toLocaleTimeString('pt-BR')} |{' '}
-                  {item.rows} rows | {item.durationMs} ms
+                  {item.rows} rows | {item.durationMs} ms | {item.status}
                 </p>
               </div>
             ))}

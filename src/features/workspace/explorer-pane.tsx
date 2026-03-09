@@ -10,6 +10,7 @@ export function ExplorerPane() {
   const {
     state: { objects, explorerSearch, activeObject },
     dispatch,
+    selectObject,
   } = useSession();
 
   const normalizedSearch = explorerSearch.trim().toLowerCase();
@@ -58,9 +59,7 @@ export function ExplorerPane() {
               <button
                 key={item.name}
                 type="button"
-                onClick={() =>
-                  dispatch({ type: 'SELECT_OBJECT', payload: item.name })
-                }
+                onClick={() => void selectObject(item.name)}
                 className={cn(
                   'flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
                   isActive

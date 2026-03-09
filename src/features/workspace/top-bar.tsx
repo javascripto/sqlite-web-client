@@ -23,8 +23,12 @@ export function TopBar() {
       activeObject,
       isExplorerVisible,
       isSqlConsoleVisible,
+      isOpeningDatabase,
+      statusMessage,
     },
     dispatch,
+    openDatabase,
+    syncDatabaseToDisk,
   } = useSession();
 
   return (
@@ -47,6 +51,12 @@ export function TopBar() {
               <p className="font-semibold text-foreground">{activeObject}</p>
             </>
           ) : null}
+          {statusMessage ? (
+            <>
+              <span className="text-border">|</span>
+              <p className="truncate">{statusMessage}</p>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -61,17 +71,20 @@ export function TopBar() {
           size="sm"
           variant="outline"
           className="bg-card hover:bg-accent"
+          onClick={() => void openDatabase()}
+          disabled={isOpeningDatabase}
         >
           <FolderOpenDot className="size-4" />
-          Abrir .db
+          {isOpeningDatabase ? 'Abrindo...' : 'Abrir .db'}
         </Button>
         <Button
           size="sm"
           variant="outline"
           className="bg-card hover:bg-accent"
+          onClick={() => void syncDatabaseToDisk()}
         >
           <Sigma className="size-4" />
-          SQL
+          Salvar .db
         </Button>
         <Button
           size="sm"

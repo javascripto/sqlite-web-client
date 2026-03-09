@@ -16,3 +16,10 @@
   - [x] Adicionar ThemeProvider com suporte a light/dark/system
   - [x] Integrar ThemeToggle na TopBar
   - [x] Conectar sonner ao tema atual
+- [x] Fase 2 - File System Access API + SQLite WASM
+  - [x] Integrar SQLite worker (`@sqlite.org/sqlite-wasm`) com OPFS
+  - [x] Implementar import do `.db` para OPFS por streaming
+  - [x] Listar objetos reais (`sqlite_master`) no explorer
+  - [x] Carregar dados reais paginados por tabela
+  - [x] Executar SQL real e registrar no histórico
+  - [x] Sincronizar alterações do OPFS de volta ao arquivo local

@@ -10,14 +10,15 @@ export function DataGridPane() {
   const {
     state: { activeObject, page, pageSize, selectedRowIndex },
     dispatch,
+    setPage,
   } = useSession();
 
   const tableData = useActiveTableData();
   const hasData = Boolean(activeObject && tableData);
 
-  const totalRows = tableData?.rows.length ?? 0;
+  const totalRows = tableData?.totalRows ?? 0;
   const pageStart = page * pageSize;
-  const rows = tableData?.rows.slice(pageStart, pageStart + pageSize) ?? [];
+  const rows = tableData?.rows ?? [];
   const totalPages = Math.max(Math.ceil(totalRows / pageSize), 1);
   const columns = tableData?.columns ?? [];
   const columnTemplate = `repeat(${Math.max(columns.length, 1)}, minmax(140px, 1fr))`;
@@ -156,7 +157,7 @@ export function DataGridPane() {
             size="icon"
             variant="outline"
             className="size-7 bg-background hover:bg-accent"
-            onClick={() => dispatch({ type: 'SET_PAGE', payload: page - 1 })}
+            onClick={() => void setPage(page - 1)}
             disabled={page <= 0}
           >
             <ChevronLeft className="size-4" />
@@ -165,7 +166,7 @@ export function DataGridPane() {
             size="icon"
             variant="outline"
             className="size-7 bg-background hover:bg-accent"
-            onClick={() => dispatch({ type: 'SET_PAGE', payload: page + 1 })}
+            onClick={() => void setPage(page + 1)}
             disabled={page + 1 >= totalPages}
           >
             <ChevronRight className="size-4" />

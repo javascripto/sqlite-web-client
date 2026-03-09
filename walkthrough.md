@@ -70,3 +70,28 @@
 - `src/components/ui/sonner.tsx`
 - `src/features/workspace/top-bar.tsx`
 - `src/features/workspace/workspace-shell.tsx`
+
+## Fase 2 - File System Access API + SQLite WASM
+
+### O que foi feito
+- `SQLite` integrado via worker (`@sqlite.org/sqlite-wasm`) com `OPFS`.
+- Fluxo de abertura real do `.db`:
+  - Seleciona arquivo com `showOpenFilePicker`.
+  - Copia para OPFS em streaming (sem carregar o arquivo inteiro na memoria da app).
+  - Abre conexao SQLite no arquivo OPFS.
+- Explorer passou a listar objetos reais vindos de `sqlite_master`.
+- Data grid passou a carregar dados reais paginados por tabela.
+- Console SQL passou a executar query real (com fallback mock quando nenhum `.db` foi aberto).
+- Botao de sincronizacao salva o estado do DB em OPFS de volta no arquivo local selecionado.
+- Suporte de headers COOP/COEP no Vite para habilitar worker/OPFS de forma compativel.
+
+### Arquivos principais
+- `src/features/sqlite/sqlite-engine.ts`
+- `src/features/sqlite/fs-access-gateway.ts`
+- `src/app/session/session-provider.tsx`
+- `src/app/session/types.ts`
+- `src/features/workspace/top-bar.tsx`
+- `src/features/workspace/explorer-pane.tsx`
+- `src/features/workspace/data-grid-pane.tsx`
+- `src/features/workspace/sql-console-pane.tsx`
+- `vite.config.ts`
