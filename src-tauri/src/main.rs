@@ -3,7 +3,8 @@
 mod sqlite;
 
 use sqlite::{
-    list_objects, open_database, persist_current_database, query_table_page, run_sql, AppState,
+    list_objects, open_database, persist_current_database, query_table_page, run_sql, update_cell,
+    AppState,
 };
 
 fn main() {
@@ -14,6 +15,7 @@ fn main() {
             list_objects,
             query_table_page,
             run_sql,
+            update_cell,
             persist_current_database,
         ])
         .run(tauri::generate_context!())

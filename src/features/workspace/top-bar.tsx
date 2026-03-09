@@ -1,4 +1,5 @@
 import {
+  Cpu,
   Database,
   FolderOpenDot,
   Hammer,
@@ -13,10 +14,18 @@ import { useSession } from '@/app/session/session-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
 
 export function TopBar() {
   const {
     state: {
+      backendPreference,
+      activeBackend,
+      isReadOnly,
+      canUseTauri,
       databaseName,
       sqliteVersion,
       openStatus,
@@ -28,6 +37,7 @@ export function TopBar() {
       statusMessage,
     },
     dispatch,
+    setBackendPreference,
     openDatabase,
     syncDatabaseToDisk,
   } = useSession();
@@ -46,10 +56,18 @@ export function TopBar() {
           <p className="truncate">{databaseName ?? 'No database opened'}</p>
           <span className="text-border">|</span>
           <p>SQLite {sqliteVersion ?? '-'}</p>
+          <span className="text-border">|</span>
+          <p>Backend {activeBackend ?? backendPreference}</p>
           {activeObject ? (
             <>
               <span className="text-border">|</span>
               <p className="font-semibold text-foreground">{activeObject}</p>
+            </>
+          ) : null}
+          {isReadOnly ? (
+            <>
+              <span className="text-border">|</span>
+              <p className="text-amber-600 dark:text-amber-400">read-only</p>
             </>
           ) : null}
           {statusMessage ? (
@@ -68,6 +86,36 @@ export function TopBar() {
         >
           {openStatus}
         </Badge>
+        <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1">
+          <Cpu className="size-3.5 text-muted-foreground" />
+          <NativeSelect
+            size="sm"
+            value={backendPreference}
+            onChange={event =>
+              setBackendPreference(
+                event.target.value as typeof backendPreference,
+              )
+            }
+            className="w-[132px]"
+          >
+            <NativeSelectOption value="auto">Auto</NativeSelectOption>
+            <NativeSelectOption value="browser">Browser</NativeSelectOption>
+            <NativeSelectOption
+              value="tauri"
+              disabled={!canUseTauri}
+            >
+              Tauri
+            </NativeSelectOption>
+          </NativeSelect>
+        </div>
+        {activeBackend ? (
+          <Badge
+            variant="secondary"
+            className="px-2 py-0.5 text-[10px] uppercase tracking-wide"
+          >
+            {activeBackend}
+          </Badge>
+        ) : null}
         <Button
           size="sm"
           variant="outline"
@@ -91,9 +139,13 @@ export function TopBar() {
           variant="outline"
           className="bg-card hover:bg-accent"
           onClick={() => void syncDatabaseToDisk()}
+          disabled={
+            openStatus !== 'ready' ||
+            (activeBackend === 'browser' && isReadOnly)
+          }
         >
           <Sigma className="size-4" />
-          Salvar .db
+          {activeBackend === 'tauri' ? 'Salvar no disco' : 'Salvar .db'}
         </Button>
         <Button
           size="sm"

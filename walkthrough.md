@@ -1,35 +1,23 @@
 # walkthrough.md
 
-## Bootstrap Fase 0 - concluido
+## Fase 0 - Bootstrap técnico
 
 ### O que foi feito
 - Projeto Vite + React + TypeScript inicializado no repositório atual.
-- Template padrão removido (logos/css de exemplo).
+- Template padrão removido.
 - Tailwind CSS v4 configurado com plugin oficial do Vite.
-- `shadcn/ui` inicializado e componentes base adicionados.
+- `shadcn/ui` inicializado com componentes base.
 - `Biome` configurado como ferramenta única de lint/format/check.
-- `ESLint` removido (dependências e arquivo de configuração).
+- `ESLint` removido.
 - Hooks Git (`pre-commit` e `pre-push`) configurados com Husky + lint-staged.
-- Shell inicial da UI criada no estilo TablePlus (header, explorer, área grid e console).
-
-### Arquivos principais
-- `package.json` e `package-lock.json`
-- `biome.json`
-- `.husky/pre-commit`
-- `.husky/pre-push`
-- `src/App.tsx`
-- `src/index.css`
-- `vite.config.ts`
-- `tsconfig.json`
-- `index.html`
 
 ### Validação executada
-- `npm run biome:check` (ok)
-- `npm run build` (ok)
-- `npm run lint` (ok)
-- `npm run format` (ok)
+- `npm run biome:check`
+- `npm run build`
+- `npm run lint`
+- `npm run format`
 
-## Fase 1 - Shell da aplicacao
+## Fase 1 - Shell da aplicação
 
 ### O que foi feito
 - Estrutura modular da interface criada:
@@ -37,61 +25,88 @@
   - `ExplorerPane`
   - `DataGridPane`
   - `SqlConsolePane`
-- Estado global de sessao criado com React Context (`SessionProvider`).
-- Dataset mockado adicionado para simular objetos SQLite e tabela `vehicles`.
+- Estado global de sessão criado com React Context.
+- Dataset mockado adicionado para permitir fluxo inicial sem banco aberto.
 - Fluxos funcionais habilitados:
-  - Busca e selecao de objetos no explorer.
-  - Renderizacao de grade por pagina (`LIMIT/OFFSET` simulado via slicing).
-  - Selecao de linha.
-  - Execucao SQL simulada com log e notificacao.
+  - busca e seleção de objetos
+  - paginação
+  - seleção de linha
+  - execução SQL simulada
 
 ### Arquivos principais
 - `src/app/session/session-provider.tsx`
 - `src/app/session/types.ts`
 - `src/features/mock/mock-schema.ts`
-- `src/features/workspace/top-bar.tsx`
-- `src/features/workspace/explorer-pane.tsx`
-- `src/features/workspace/data-grid-pane.tsx`
-- `src/features/workspace/sql-console-pane.tsx`
-- `src/features/workspace/workspace-shell.tsx`
-- `src/App.tsx`
+- `src/features/workspace/*.tsx`
 
 ## Tema light/dark/system
 
 ### O que foi feito
-- `ThemeProvider` adicionado com persistencia em `localStorage`.
-- `ThemeToggle` adicionado na `TopBar` com opcoes `Light`, `Dark` e `System`.
-- `Toaster` (`sonner`) ligado ao tema atual via `useTheme`.
-- Classes principais do workspace ajustadas para tokens de tema (`background`, `foreground`, `border`, etc.).
+- `ThemeProvider` adicionado com persistência em `localStorage`.
+- `ThemeToggle` adicionado na `TopBar`.
+- `Toaster` (`sonner`) ligado ao tema atual.
+- Tokens visuais do workspace ajustados para `background`, `foreground`, `border` e afins.
 
 ### Arquivos principais
 - `src/components/theme-provider.tsx`
 - `src/components/theme-toggle.tsx`
 - `src/components/ui/sonner.tsx`
-- `src/features/workspace/top-bar.tsx`
-- `src/features/workspace/workspace-shell.tsx`
 
-## Fase 2 - File System Access API + SQLite WASM
+## Fase 2 - Browser com File System Access + SQLite WASM
 
 ### O que foi feito
 - `SQLite` integrado via worker (`@sqlite.org/sqlite-wasm`) com `OPFS`.
-- Fluxo de abertura real do `.db`:
-  - Seleciona arquivo com `showOpenFilePicker`.
-  - Copia para OPFS em streaming (sem carregar o arquivo inteiro na memoria da app).
-  - Abre conexao SQLite no arquivo OPFS.
-- Explorer passou a listar objetos reais vindos de `sqlite_master`.
+- Fluxo real de abertura do `.db` no browser:
+  - `showOpenFilePicker`
+  - cópia por streaming para OPFS
+  - abertura do banco no worker
+- Explorer passou a listar objetos reais de `sqlite_master`.
 - Data grid passou a carregar dados reais paginados por tabela.
-- Console SQL passou a executar query real (com fallback mock quando nenhum `.db` foi aberto).
-- Botao de sincronizacao salva o estado do DB em OPFS de volta no arquivo local selecionado.
-- Suporte de headers COOP/COEP no Vite para habilitar worker/OPFS de forma compativel.
+- Console SQL passou a executar queries reais.
+- Botão de sincronização exporta o banco de OPFS de volta para o arquivo local.
+- Headers COOP/COEP no Vite foram adicionados para habilitar worker/OPFS.
 
 ### Arquivos principais
 - `src/features/sqlite/sqlite-engine.ts`
 - `src/features/sqlite/fs-access-gateway.ts`
 - `src/app/session/session-provider.tsx`
+- `vite.config.ts`
+
+## Fase 3 - Modo híbrido Browser/Tauri
+
+### O que foi feito
+- Fluxo Tauri iniciado para suportar bancos grandes fora das limitações práticas do browser.
+- Backend nativo criado com `rusqlite` para:
+  - abrir banco
+  - listar objetos
+  - paginar tabela
+  - executar SQL
+- Cliente frontend para Tauri criado em `src/features/sqlite/tauri-sqlite-client.ts`.
+- Scripts npm ajustados para priorizar toolchain do `rustup`.
+- Estado de sessão expandido para rastrear:
+  - backend preferido
+  - backend ativo
+  - modo `read-only`
+- `TopBar` atualizada com seletor explícito `Auto / Browser / Tauri`.
+- A UI agora ajusta a ação de salvar conforme o backend ativo.
+
+### Arquivos principais
+- `src/features/sqlite/tauri-sqlite-client.ts`
+- `src-tauri/src/main.rs`
+- `src-tauri/src/sqlite.rs`
+- `src/app/session/session-provider.tsx`
 - `src/app/session/types.ts`
 - `src/features/workspace/top-bar.tsx`
-- `src/features/workspace/explorer-pane.tsx`
-- `src/features/workspace/data-grid-pane.tsx`
-- `src/features/workspace/sql-console-pane.tsx`
-- `vite.config.ts`
+
+### Estado atual
+- Browser funciona para bancos menores com OPFS.
+- Tauri está preparado no código, mas a validação end-to-end segue pendente.
+- O bloqueio operacional atual continua sendo espaço em disco insuficiente para concluir `npm run tauri:dev`.
+
+## Próxima fase recomendada
+
+### Fase 4 - CRUD e inspeção de dados
+- Adicionar edição inline na grade.
+- Implementar `INSERT`, `UPDATE` e `DELETE`.
+- Resolver estratégia de identificação por chave primária ou `rowid`.
+- Fazer refresh granular da página após mutações.

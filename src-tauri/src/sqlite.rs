@@ -27,10 +27,37 @@ pub struct DbObjectItem {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RowIdentifier {
+    pub kind: String,
+    pub key_columns: Vec<String>,
+    pub hidden_column: Option<String>,
+    pub updatable_columns: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TablePageResult {
     pub columns: Vec<String>,
     pub rows: Vec<Map<String, Value>>,
     pub total_rows: i64,
+    pub identifier: RowIdentifier,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCellRequest {
+    pub table_name: String,
+    pub column_name: String,
+    pub value: Value,
+    pub row: Map<String, Value>,
+    pub identifier: RowIdentifierPayload,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowIdentifierPayload {
+    pub kind: String,
+    pub key_columns: Vec<String>,
 }
 
 fn open_connection_from_state(state: &State<AppState>) -> Result<Connection, String> {
@@ -59,6 +86,83 @@ fn sqlite_value_to_json(value: ValueRef<'_>) -> Value {
 
 fn quote_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn json_to_rusqlite_value(value: &Value) -> rusqlite::types::Value {
+    match value {
+        Value::Null => rusqlite::types::Value::Null,
+        Value::Bool(boolean) => rusqlite::types::Value::Integer(if *boolean { 1 } else { 0 }),
+        Value::Number(number) => {
+            if let Some(integer) = number.as_i64() {
+                rusqlite::types::Value::Integer(integer)
+            } else if let Some(float) = number.as_f64() {
+                rusqlite::types::Value::Real(float)
+            } else {
+                rusqlite::types::Value::Null
+            }
+        }
+        Value::String(text) => rusqlite::types::Value::Text(text.clone()),
+        Value::Array(_) | Value::Object(_) => rusqlite::types::Value::Text(value.to_string()),
+    }
+}
+
+fn resolve_row_identifier(connection: &Connection, table_name: &str) -> Result<RowIdentifier, String> {
+    let quoted_table = quote_identifier(table_name);
+    let mut stmt = connection
+        .prepare(&format!("PRAGMA table_info({quoted_table})"))
+        .map_err(|e| format!("Failed to prepare table_info query: {e}"))?;
+
+    let pragma_rows = stmt
+        .query_map([], |row| {
+            let name: String = row.get(1)?;
+            let pk: i64 = row.get(5)?;
+            Ok((name, pk))
+        })
+        .map_err(|e| format!("Failed to execute table_info query: {e}"))?;
+
+    let mut columns = Vec::new();
+    let mut primary_keys = Vec::new();
+
+    for row in pragma_rows {
+        let (name, pk) = row.map_err(|e| format!("Failed to read table_info row: {e}"))?;
+        columns.push(name.clone());
+        if pk > 0 {
+            primary_keys.push((pk, name));
+        }
+    }
+
+    primary_keys.sort_by_key(|(pk, _)| *pk);
+
+    if !primary_keys.is_empty() {
+        return Ok(RowIdentifier {
+            kind: "primary-key".into(),
+            key_columns: primary_keys.into_iter().map(|(_, name)| name).collect(),
+            hidden_column: None,
+            updatable_columns: columns,
+        });
+    }
+
+    let rowid_probe = connection.query_row(
+        &format!("SELECT rowid FROM {quoted_table} LIMIT 1"),
+        [],
+        |row| row.get::<_, i64>(0),
+    );
+
+    if rowid_probe.is_ok() {
+        return Ok(RowIdentifier {
+            kind: "rowid".into(),
+            key_columns: vec!["__rowid__".into()],
+            hidden_column: Some("__rowid__".into()),
+            updatable_columns: columns,
+        });
+    }
+
+    Ok(RowIdentifier {
+        kind: "none".into(),
+        key_columns: Vec::new(),
+        hidden_column: None,
+        updatable_columns: columns,
+    })
 }
 
 #[tauri::command]
@@ -140,9 +244,14 @@ pub fn query_table_page(
     state: State<AppState>,
 ) -> Result<TablePageResult, String> {
     let connection = open_connection_from_state(&state)?;
+    let identifier = resolve_row_identifier(&connection, &table_name)?;
 
     let quoted_table = quote_identifier(&table_name);
-    let data_sql = format!("SELECT * FROM {quoted_table} LIMIT ?1 OFFSET ?2");
+    let data_sql = if identifier.kind == "rowid" {
+        format!("SELECT rowid AS \"__rowid__\", * FROM {quoted_table} LIMIT ?1 OFFSET ?2")
+    } else {
+        format!("SELECT * FROM {quoted_table} LIMIT ?1 OFFSET ?2")
+    };
 
     let mut stmt = connection
         .prepare(&data_sql)
@@ -151,6 +260,7 @@ pub fn query_table_page(
     let column_names = stmt
         .column_names()
         .iter()
+        .filter(|name| Some(name.to_string()) != identifier.hidden_column)
         .map(|name| name.to_string())
         .collect::<Vec<_>>();
 
@@ -182,6 +292,7 @@ pub fn query_table_page(
         columns: column_names,
         rows: rows_json,
         total_rows,
+        identifier,
     })
 }
 
@@ -232,6 +343,47 @@ pub fn run_sql(sql: String, state: State<AppState>) -> Result<Vec<Map<String, Va
     }
 
     Ok(rows_json)
+}
+
+#[tauri::command]
+pub fn update_cell(payload: UpdateCellRequest, state: State<AppState>) -> Result<(), String> {
+    let connection = open_connection_from_state(&state)?;
+
+    if payload.identifier.kind == "none" || payload.identifier.key_columns.is_empty() {
+        return Err("Table without primary key or accessible rowid. Editing is not supported.".into());
+    }
+
+    let quoted_table = quote_identifier(&payload.table_name);
+    let quoted_column = quote_identifier(&payload.column_name);
+
+    let mut params = vec![json_to_rusqlite_value(&payload.value)];
+    let mut clauses = Vec::new();
+
+    for key in &payload.identifier.key_columns {
+        let row_value = payload
+            .row
+            .get(key)
+            .ok_or_else(|| format!("Missing key column in row payload: {key}"))?;
+
+        params.push(json_to_rusqlite_value(row_value));
+        let clause = if payload.identifier.kind == "rowid" {
+            "rowid = ?".to_string()
+        } else {
+            format!("{} = ?", quote_identifier(key))
+        };
+        clauses.push(clause);
+    }
+
+    let sql = format!(
+        "UPDATE {quoted_table} SET {quoted_column} = ? WHERE {}",
+        clauses.join(" AND ")
+    );
+
+    connection
+        .execute(&sql, rusqlite::params_from_iter(params))
+        .map_err(|e| format!("Failed to update cell: {e}"))?;
+
+    Ok(())
 }
 
 #[tauri::command]

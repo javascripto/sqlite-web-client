@@ -8,14 +8,14 @@
   - [x] Migrar para Biome e remover ESLint/Prettier
   - [x] Validar build e checks básicos
 - [x] Fase 1 - Shell da aplicação
-  - [x] Quebrar layout em componentes (TopBar, ExplorerPane, DataGridPane, SqlConsolePane)
-  - [x] Criar SessionStore inicial com estado global
+  - [x] Quebrar layout em componentes (`TopBar`, `ExplorerPane`, `DataGridPane`, `SqlConsolePane`)
+  - [x] Criar `SessionStore` inicial com estado global
   - [x] Conectar placeholders funcionais com dados mockados
   - [x] Validar fluxo básico de seleção de tabela, paginação e execução SQL simulada
 - [x] Tema da aplicação
-  - [x] Adicionar ThemeProvider com suporte a light/dark/system
-  - [x] Integrar ThemeToggle na TopBar
-  - [x] Conectar sonner ao tema atual
+  - [x] Adicionar `ThemeProvider` com suporte a `light/dark/system`
+  - [x] Integrar `ThemeToggle` na `TopBar`
+  - [x] Conectar `sonner` ao tema atual
 - [x] Fase 2 - File System Access API + SQLite WASM
   - [x] Integrar SQLite worker (`@sqlite.org/sqlite-wasm`) com OPFS
   - [x] Implementar import do `.db` para OPFS por streaming
@@ -23,3 +23,26 @@
   - [x] Carregar dados reais paginados por tabela
   - [x] Executar SQL real e registrar no histórico
   - [x] Sincronizar alterações do OPFS de volta ao arquivo local
+- [x] Fase 3 - Modo híbrido Browser/Tauri
+  - [x] Criar cliente frontend para backend Tauri
+  - [x] Criar comandos nativos para abrir banco, listar objetos, paginar tabela e executar SQL
+  - [x] Ajustar scripts/toolchain do Tauri para usar `rustup stable`
+  - [x] Expor backend ativo e modo `read-only` no estado da sessão
+  - [x] Adicionar seletor explícito de backend (`Auto / Browser / Tauri`) na UI
+  - [x] Ajustar UX de abrir/salvar conforme backend ativo
+  - [ ] Validar runtime Tauri com bancos reais grandes e pequenos
+- [ ] Fase 4 - CRUD e inspeção de dados
+  - [ ] Edição inline de célula
+  - [ ] Inserção de linha
+  - [ ] Exclusão de linha
+  - [ ] Estratégia de identificação por chave primária / `rowid`
+  - [ ] Refresh granular após mutações
+- [ ] Fase 5 - Console SQL avançado
+  - [ ] Exibir resultado tabular da última query
+  - [ ] Histórico com erro/sucesso expandível
+  - [ ] Atalhos de execução e foco
+- [ ] Fase 6 - Polimento e robustez
+  - [ ] Estados de permissão/erro mais guiados
+  - [ ] Melhor feedback para bancos grandes
+  - [ ] Revisar persistência no modo Tauri
+  - [ ] Benchmark e UX para tabelas muito grandes

@@ -1,73 +1,72 @@
-# React + TypeScript + Vite
+# Table Plus
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SQLite viewer/editor inspirado no TablePlus, construído com React + TypeScript + Vite.
 
-Currently, two official plugins are available:
+## Stack
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS v4
+- shadcn/ui
+- Biome
+- SQLite WASM (`@sqlite.org/sqlite-wasm`)
+- Tauri + `rusqlite`
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## O que já existe
+- Interface tri-pane com explorer, grade de dados e console SQL.
+- Tema `light/dark/system`.
+- Abertura real de arquivos SQLite no browser via File System Access API.
+- Cópia para OPFS por streaming para evitar carregar o arquivo inteiro na memória da app.
+- Listagem real de objetos a partir de `sqlite_master`.
+- Paginação real da grade.
+- Execução real de SQL.
+- Sincronização do banco do OPFS de volta para o arquivo local.
+- Base híbrida Browser/Tauri com seletor de backend `Auto / Browser / Tauri`.
 
-## React Compiler
+## Modos de execução
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Browser
+Usa File System Access API + SQLite WASM + OPFS.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Tauri
+Usa backend nativo com `rusqlite`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run tauri:dev
 ```
+
+Observação: no ambiente atual já houve bloqueio por falta de espaço em disco durante o build Tauri.
+
+## Scripts
+- `npm run dev`: sobe a aplicação Vite
+- `npm run build`: build de produção
+- `npm run lint`: lint com Biome
+- `npm run format`: format com Biome
+- `npm run biome:check`: check completo com Biome
+- `npm run tauri:dev`: roda a aplicação desktop
+- `npm run tauri:build`: build desktop
+
+## Estrutura principal
+- `src/app/session`: estado global da sessão
+- `src/features/workspace`: shell e painéis principais
+- `src/features/sqlite`: integrações Browser/Tauri/OPFS
+- `src-tauri`: backend desktop
+
+## Estado do roadmap
+- Concluído:
+  - bootstrap
+  - shell da aplicação
+  - tema
+  - fluxo browser com SQLite real
+  - base do modo híbrido Browser/Tauri
+- Próximo:
+  - CRUD inline na grade
+  - `INSERT`, `UPDATE` e `DELETE`
+  - inspeção de chave primária / `rowid`
+  - melhor feedback para bases grandes

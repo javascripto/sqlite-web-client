@@ -53,6 +53,25 @@ export class TauriSqliteClient {
     return invoke<Record<string, string | number | null>[]>('run_sql', { sql });
   }
 
+  async updateCell(
+    tableName: string,
+    columnName: string,
+    value: string | number | null,
+    row: Record<string, string | number | null>,
+    identifier: SqliteTablePage['identifier'],
+  ) {
+    const invoke = await getInvoke();
+    return invoke<void>('update_cell', {
+      payload: {
+        tableName,
+        columnName,
+        value,
+        row,
+        identifier,
+      },
+    });
+  }
+
   async persistCurrentDatabase() {
     const invoke = await getInvoke();
     return invoke<void>('persist_current_database');

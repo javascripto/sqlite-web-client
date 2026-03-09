@@ -12,6 +12,8 @@ import {
 import { toast } from 'sonner';
 
 import type {
+  ActiveBackend,
+  BackendPreference,
   DbObjectItem,
   QueryLogItem,
   SessionState,
@@ -36,6 +38,9 @@ import {
 } from '@/features/sqlite/tauri-sqlite-client';
 
 type SessionAction =
+  | { type: 'SET_BACKEND_PREFERENCE'; payload: BackendPreference }
+  | { type: 'SET_ACTIVE_BACKEND'; payload: ActiveBackend }
+  | { type: 'SET_READ_ONLY_MODE'; payload: boolean }
   | { type: 'SET_EXPLORER_SEARCH'; payload: string }
   | { type: 'SET_OBJECTS'; payload: DbObjectItem[] }
   | { type: 'SELECT_OBJECT'; payload: string }
@@ -64,6 +69,10 @@ const initialState: SessionState = {
   databaseName: null,
   sqliteVersion: null,
   openStatus: 'idle',
+  backendPreference: 'auto',
+  activeBackend: null,
+  isReadOnly: false,
+  canUseTauri: isTauriRuntime(),
   objects: [],
   activeObject: null,
   explorerSearch: '',
@@ -136,6 +145,12 @@ function sessionReducer(
   action: SessionAction,
 ): SessionState {
   switch (action.type) {
+    case 'SET_BACKEND_PREFERENCE':
+      return { ...state, backendPreference: action.payload };
+    case 'SET_ACTIVE_BACKEND':
+      return { ...state, activeBackend: action.payload };
+    case 'SET_READ_ONLY_MODE':
+      return { ...state, isReadOnly: action.payload };
     case 'SET_EXPLORER_SEARCH':
       return { ...state, explorerSearch: action.payload };
     case 'SET_OBJECTS':
@@ -204,11 +219,17 @@ function sessionReducer(
 interface SessionContextValue {
   state: SessionState;
   dispatch: Dispatch<SessionAction>;
+  setBackendPreference: (preference: BackendPreference) => void;
   openDatabase: () => Promise<void>;
   syncDatabaseToDisk: () => Promise<void>;
   selectObject: (name: string) => Promise<void>;
   setPage: (nextPage: number) => Promise<void>;
   runSql: () => Promise<void>;
+  updateCell: (
+    row: TableData['rows'][number],
+    columnName: string,
+    nextValue: string | number | null,
+  ) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(
@@ -238,6 +259,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
 
     return tauriClientRef.current;
+  }, []);
+
+  const setBackendPreference = useCallback((preference: BackendPreference) => {
+    dispatch({ type: 'SET_BACKEND_PREFERENCE', payload: preference });
   }, []);
 
   const loadTableData = useCallback(
@@ -291,6 +316,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     dispatch({ type: 'SET_OPENING_DATABASE', payload: true });
     dispatch({ type: 'SET_IMPORT_PROGRESS', payload: 0 });
     dispatch({ type: 'SET_OPEN_STATUS', payload: 'idle' });
+    dispatch({ type: 'SET_READ_ONLY_MODE', payload: false });
     dispatch({
       type: 'SET_STATUS_MESSAGE',
       payload: 'Abrindo arquivo SQLite...',
@@ -303,9 +329,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
     } | null = null;
 
     try {
-      if (isTauriRuntime()) {
+      const shouldUseTauri =
+        state.backendPreference === 'tauri' ||
+        (state.backendPreference === 'auto' && isTauriRuntime());
+
+      if (shouldUseTauri) {
+        if (!isTauriRuntime()) {
+          throw new Error('Modo Tauri indisponível nesta sessão do navegador.');
+        }
+
         backendModeRef.current = 'tauri';
         readOnlyModeRef.current = false;
+        dispatch({ type: 'SET_ACTIVE_BACKEND', payload: 'tauri' });
+        dispatch({ type: 'SET_READ_ONLY_MODE', payload: false });
 
         const tauriClient = getTauriClient();
         const openResult = await tauriClient.openDatabase();
@@ -354,6 +390,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       }
 
       backendModeRef.current = 'browser';
+      dispatch({ type: 'SET_ACTIVE_BACKEND', payload: 'browser' });
 
       const fileHandle = await pickDatabaseFileHandle();
       const hasReadPermission = await ensureReadPermission(fileHandle);
@@ -409,6 +446,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       activeOpfsFilenameRef.current = opfsFilename;
       const openResult = await engine.openOpfsDatabase(imported.opfsPath);
       readOnlyModeRef.current = openResult.readOnly;
+      dispatch({ type: 'SET_READ_ONLY_MODE', payload: openResult.readOnly });
       const objects = await engine.listObjects();
 
       dispatch({
@@ -462,6 +500,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
       dispatch({ type: 'SET_ACTIVE_TABLE_DATA', payload: null });
       dispatch({ type: 'SELECT_ROW', payload: null });
       dispatch({ type: 'SET_IMPORT_PROGRESS', payload: null });
+      dispatch({ type: 'SET_ACTIVE_BACKEND', payload: null });
+      dispatch({ type: 'SET_READ_ONLY_MODE', payload: false });
       readOnlyModeRef.current = false;
       backendModeRef.current = null;
 
@@ -469,7 +509,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
     } finally {
       dispatch({ type: 'SET_OPENING_DATABASE', payload: false });
     }
-  }, [getEngine, getTauriClient, loadTableData, state.pageSize]);
+  }, [
+    getEngine,
+    getTauriClient,
+    loadTableData,
+    state.backendPreference,
+    state.pageSize,
+  ]);
 
   const syncDatabaseToDisk = useCallback(async () => {
     if (backendModeRef.current === 'tauri') {
@@ -572,6 +618,73 @@ export function SessionProvider({ children }: PropsWithChildren) {
     state.queryText,
   ]);
 
+  const updateCell = useCallback(
+    async (
+      row: TableData['rows'][number],
+      columnName: string,
+      nextValue: string | number | null,
+    ) => {
+      if (
+        state.openStatus !== 'ready' ||
+        !state.activeObject ||
+        !state.activeTableData
+      ) {
+        toast.error('Abra uma tabela antes de editar dados.');
+        return;
+      }
+
+      if (
+        !state.activeTableData.identifier.updatableColumns.includes(columnName)
+      ) {
+        toast.error('Esta coluna não pode ser editada.');
+        return;
+      }
+
+      const identifier = state.activeTableData.identifier;
+      const currentValue = row[columnName];
+
+      if (currentValue === nextValue) {
+        return;
+      }
+
+      try {
+        if (backendModeRef.current === 'tauri') {
+          await getTauriClient().updateCell(
+            state.activeObject,
+            columnName,
+            nextValue,
+            row,
+            identifier,
+          );
+        } else {
+          await getEngine().updateCell(
+            state.activeObject,
+            identifier,
+            row,
+            columnName,
+            nextValue,
+          );
+        }
+
+        await loadTableData(state.activeObject, state.page, state.pageSize);
+        toast.success(`Coluna ${columnName} atualizada.`);
+      } catch (error) {
+        const message = extractErrorMessage(error, 'Erro ao atualizar célula');
+        toast.error('Erro ao salvar edição', { description: message });
+      }
+    },
+    [
+      getEngine,
+      getTauriClient,
+      loadTableData,
+      state.activeObject,
+      state.activeTableData,
+      state.openStatus,
+      state.page,
+      state.pageSize,
+    ],
+  );
+
   useEffect(() => {
     (async () => {
       if (!isFileSystemAccessSupported()) {
@@ -605,13 +718,24 @@ export function SessionProvider({ children }: PropsWithChildren) {
     () => ({
       state,
       dispatch,
+      setBackendPreference,
       openDatabase,
       syncDatabaseToDisk,
       selectObject,
       setPage,
       runSql,
+      updateCell,
     }),
-    [openDatabase, runSql, selectObject, setPage, state, syncDatabaseToDisk],
+    [
+      openDatabase,
+      runSql,
+      selectObject,
+      setBackendPreference,
+      setPage,
+      state,
+      syncDatabaseToDisk,
+      updateCell,
+    ],
   );
 
   return (

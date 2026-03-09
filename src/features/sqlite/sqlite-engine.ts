@@ -17,6 +17,12 @@ export interface SqliteTablePage {
   columns: string[];
   rows: Record<string, string | number | null>[];
   totalRows: number;
+  identifier: {
+    kind: 'primary-key' | 'rowid' | 'none';
+    keyColumns: string[];
+    hiddenColumn: string | null;
+    updatableColumns: string[];
+  };
 }
 
 type WorkerResponse = Record<string, unknown>;
@@ -239,15 +245,22 @@ export class SqliteEngine {
     offset: number,
   ): Promise<SqliteTablePage> {
     const quotedTable = quoteIdent(tableName);
+    const identifier = await this.resolveRowIdentifier(tableName);
+    const selectColumns =
+      identifier.kind === 'rowid' && identifier.hiddenColumn
+        ? `${quotedTable}.rowid AS ${quoteIdent(identifier.hiddenColumn)}, *`
+        : '*';
 
     const dataRows = await this.execRows(
-      `SELECT * FROM ${quotedTable} LIMIT ? OFFSET ?`,
+      `SELECT ${selectColumns} FROM ${quotedTable} LIMIT ? OFFSET ?`,
       [limit, offset],
     );
 
     const columns =
       dataRows.length > 0
-        ? Object.keys(dataRows[0])
+        ? Object.keys(dataRows[0]).filter(
+            column => column !== identifier.hiddenColumn,
+          )
         : await this.fetchColumns(tableName);
 
     const countRows = await this.execRows(
@@ -259,6 +272,7 @@ export class SqliteEngine {
       columns,
       rows: dataRows,
       totalRows,
+      identifier,
     };
   }
 
@@ -266,11 +280,97 @@ export class SqliteEngine {
     return this.execRows(sql);
   }
 
+  async updateCell(
+    tableName: string,
+    identifier: SqliteTablePage['identifier'],
+    row: Record<string, string | number | null>,
+    columnName: string,
+    value: string | number | null,
+  ) {
+    const quotedTable = quoteIdent(tableName);
+    const quotedColumn = quoteIdent(columnName);
+    const setBind: Array<string | number | null> = [value];
+    const whereClause = this.buildWhereClause(identifier, row, setBind);
+
+    await this.execRows(
+      `UPDATE ${quotedTable} SET ${quotedColumn} = ? WHERE ${whereClause}`,
+      setBind,
+    );
+  }
+
   private async fetchColumns(tableName: string): Promise<string[]> {
     const quotedTable = quoteIdent(tableName);
     const pragmaRows = await this.execRows(`PRAGMA table_info(${quotedTable})`);
 
     return pragmaRows.map(row => String(row.name ?? ''));
+  }
+
+  private async resolveRowIdentifier(
+    tableName: string,
+  ): Promise<SqliteTablePage['identifier']> {
+    const quotedTable = quoteIdent(tableName);
+    const pragmaRows = await this.execRows(`PRAGMA table_info(${quotedTable})`);
+
+    const primaryKeyColumns = pragmaRows
+      .filter(row => Number(row.pk ?? 0) > 0)
+      .sort((a, b) => Number(a.pk ?? 0) - Number(b.pk ?? 0))
+      .map(row => String(row.name ?? ''))
+      .filter(Boolean);
+
+    const updatableColumns = pragmaRows
+      .map(row => String(row.name ?? ''))
+      .filter(Boolean);
+
+    if (primaryKeyColumns.length > 0) {
+      return {
+        kind: 'primary-key',
+        keyColumns: primaryKeyColumns,
+        hiddenColumn: null,
+        updatableColumns,
+      };
+    }
+
+    try {
+      await this.execRows(`SELECT rowid FROM ${quotedTable} LIMIT 1`);
+      return {
+        kind: 'rowid',
+        keyColumns: ['__rowid__'],
+        hiddenColumn: '__rowid__',
+        updatableColumns,
+      };
+    } catch {
+      return {
+        kind: 'none',
+        keyColumns: [],
+        hiddenColumn: null,
+        updatableColumns,
+      };
+    }
+  }
+
+  private buildWhereClause(
+    identifier: SqliteTablePage['identifier'],
+    row: Record<string, string | number | null>,
+    bindValues: Array<string | number | null>,
+  ) {
+    if (identifier.kind === 'none' || identifier.keyColumns.length === 0) {
+      throw new Error(
+        'Tabela sem chave primária ou rowid acessível. Edição não suportada.',
+      );
+    }
+
+    return identifier.keyColumns
+      .map(column => {
+        if (!(column in row)) {
+          throw new Error(`Coluna identificadora ausente na linha: ${column}`);
+        }
+
+        bindValues.push(row[column]);
+        return identifier.kind === 'rowid'
+          ? 'rowid = ?'
+          : `${quoteIdent(column)} = ?`;
+      })
+      .join(' AND ');
   }
 
   private async execRows(
