@@ -31,18 +31,18 @@
   - [x] Adicionar seletor explícito de backend (`Auto / Browser / Tauri`) na UI
   - [x] Ajustar UX de abrir/salvar conforme backend ativo
   - [ ] Validar runtime Tauri com bancos reais grandes e pequenos
-- [ ] Fase 4 - CRUD e inspeção de dados
+- [x] Fase 4 - CRUD e inspeção de dados
   - [x] Edição inline de célula
   - [x] Inserção de linha
   - [x] Exclusão de linha
   - [x] Estratégia de identificação por chave primária / `rowid`
   - [x] Refresh granular após mutações
-- [ ] Fase 5 - Console SQL avançado
-  - [ ] Exibir resultado tabular da última query
-  - [ ] Histórico com erro/sucesso expandível
-  - [ ] Atalhos de execução e foco
-- [ ] Fase 6 - Polimento e robustez
-  - [ ] Estados de permissão/erro mais guiados
-  - [ ] Melhor feedback para bancos grandes
+- [x] Fase 5 - Console SQL avançado
+  - [x] Exibir resultado tabular da última query
+  - [x] Histórico com erro/sucesso expandível
+  - [x] Atalhos de execução e foco
+- [x] Fase 6 - Polimento e robustez
+  - [x] Estados de permissão/erro mais guiados
+  - [x] Melhor feedback para bancos grandes
   - [ ] Revisar persistência no modo Tauri
   - [ ] Benchmark e UX para tabelas muito grandes

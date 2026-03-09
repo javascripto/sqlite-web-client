@@ -18,6 +18,17 @@ export interface QueryLogItem {
   message?: string;
 }
 
+export interface SqlResultSet {
+  sql: string;
+  ranAt: string;
+  status: 'ok' | 'error';
+  columns: string[];
+  rows: DataRow[];
+  rowCount: number;
+  durationMs: number;
+  message?: string;
+}
+
 export type DataRow = Record<string, string | number | null>;
 
 export interface RowIdentifier {
@@ -49,6 +60,8 @@ export interface SessionState {
   explorerSearch: string;
   queryText: string;
   queryLog: QueryLogItem[];
+  lastQueryResult: SqlResultSet | null;
+  isRunningQuery: boolean;
   page: number;
   pageSize: number;
   selectedRowIndex: number | null;

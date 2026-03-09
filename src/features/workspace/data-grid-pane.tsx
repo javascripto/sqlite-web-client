@@ -20,6 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -30,6 +31,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
 function serializeCellValue(value: string | number | null) {
@@ -60,7 +62,14 @@ function parseEditedValue(
 
 export function DataGridPane() {
   const {
-    state: { activeObject, page, pageSize, selectedRowIndex, isReadOnly },
+    state: {
+      activeObject,
+      page,
+      pageSize,
+      selectedRowIndex,
+      isReadOnly,
+      isLoadingTableData,
+    },
     dispatch,
     setPage,
     updateCell,
@@ -172,6 +181,31 @@ export function DataGridPane() {
                     : 'Read-only grid'}
               </p>
             </>
+          ) : null}
+          {isLoadingTableData ? (
+            <Badge
+              variant="outline"
+              className="gap-1 rounded-sm px-2 py-0.5 text-[10px] uppercase"
+            >
+              <Spinner className="size-3" />
+              loading
+            </Badge>
+          ) : null}
+          {identifier?.kind === 'none' ? (
+            <Badge
+              variant="destructive"
+              className="rounded-sm px-2 py-0.5 text-[10px] uppercase"
+            >
+              no row id
+            </Badge>
+          ) : null}
+          {isReadOnly ? (
+            <Badge
+              variant="outline"
+              className="rounded-sm px-2 py-0.5 text-[10px] uppercase"
+            >
+              read-only
+            </Badge>
           ) : null}
         </div>
         <div className="flex items-center gap-1">
@@ -361,6 +395,12 @@ export function DataGridPane() {
                   );
                 })}
               </div>
+              {identifier?.kind === 'none' ? (
+                <div className="border-t border-border bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  Esta tabela não expõe chave primária nem `rowid` acessível. O
+                  grid fica em modo de inspeção.
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="flex h-full items-center justify-center rounded-md border border-border bg-card/40 text-sm text-muted-foreground">

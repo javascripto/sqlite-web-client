@@ -46,6 +46,8 @@ type SessionAction =
   | { type: 'SELECT_OBJECT'; payload: string }
   | { type: 'SET_QUERY_TEXT'; payload: string }
   | { type: 'RUN_QUERY'; payload: QueryLogItem }
+  | { type: 'SET_LAST_QUERY_RESULT'; payload: SessionState['lastQueryResult'] }
+  | { type: 'SET_RUNNING_QUERY'; payload: boolean }
   | { type: 'SET_PAGE'; payload: number }
   | { type: 'SET_PAGE_SIZE'; payload: number }
   | { type: 'SELECT_ROW'; payload: number | null }
@@ -78,6 +80,8 @@ const initialState: SessionState = {
   explorerSearch: '',
   queryText: defaultSql,
   queryLog: [],
+  lastQueryResult: null,
+  isRunningQuery: false,
   page: 0,
   pageSize: 300,
   selectedRowIndex: null,
@@ -169,6 +173,10 @@ function sessionReducer(
         ...state,
         queryLog: [action.payload, ...state.queryLog].slice(0, 40),
       };
+    case 'SET_LAST_QUERY_RESULT':
+      return { ...state, lastQueryResult: action.payload };
+    case 'SET_RUNNING_QUERY':
+      return { ...state, isRunningQuery: action.payload };
     case 'SET_PAGE':
       return {
         ...state,
@@ -563,6 +571,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
     const now = new Date();
     const start = performance.now();
+    dispatch({ type: 'SET_RUNNING_QUERY', payload: true });
 
     try {
       const rows =
@@ -570,6 +579,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
           ? await getTauriClient().runSql(state.queryText)
           : await getEngine().runSql(state.queryText);
       const durationMs = Math.round(performance.now() - start);
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
 
       dispatch({
         type: 'RUN_QUERY',
@@ -580,6 +590,22 @@ export function SessionProvider({ children }: PropsWithChildren) {
           durationMs,
           rows: rows.length,
           status: 'ok',
+        },
+      });
+      dispatch({
+        type: 'SET_LAST_QUERY_RESULT',
+        payload: {
+          sql: state.queryText,
+          ranAt: now.toISOString(),
+          status: 'ok',
+          columns,
+          rows,
+          rowCount: rows.length,
+          durationMs,
+          message:
+            columns.length === 0
+              ? 'Statement executado sem retorno tabular.'
+              : undefined,
         },
       });
 
@@ -606,8 +632,23 @@ export function SessionProvider({ children }: PropsWithChildren) {
           message,
         },
       });
+      dispatch({
+        type: 'SET_LAST_QUERY_RESULT',
+        payload: {
+          sql: state.queryText,
+          ranAt: now.toISOString(),
+          status: 'error',
+          columns: [],
+          rows: [],
+          rowCount: 0,
+          durationMs: Math.round(performance.now() - start),
+          message,
+        },
+      });
 
       toast.error('Erro ao executar SQL', { description: message });
+    } finally {
+      dispatch({ type: 'SET_RUNNING_QUERY', payload: false });
     }
   }, [
     getTauriClient,

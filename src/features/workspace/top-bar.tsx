@@ -81,7 +81,13 @@ export function TopBar() {
 
       <div className="flex items-center gap-2">
         <Badge
-          variant="outline"
+          variant={
+            openStatus === 'error'
+              ? 'destructive'
+              : openStatus === 'ready'
+                ? 'secondary'
+                : 'outline'
+          }
           className="px-2 py-0.5 text-[10px] uppercase tracking-wide"
         >
           {openStatus}

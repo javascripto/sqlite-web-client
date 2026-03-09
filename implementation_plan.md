@@ -15,11 +15,14 @@ Construir uma aplicação web estilo TablePlus para SQLite, com navegação de s
 - Listagem real de objetos, paginação real de tabelas e execução SQL real.
 - Base do modo híbrido com backend Tauri.
 - Seletor explícito de backend na UI (`Auto / Browser / Tauri`).
+- CRUD básico na grade (`INSERT`, `UPDATE`, `DELETE`).
+- Console SQL com resultado tabular, histórico e atalho de execução.
+- Polimento visual para loading, `read-only` e tabelas sem identificador seguro.
 
 ### Pendente
 - Validar Tauri com bancos reais grandes.
-- Exibir resultado tabular da query SQL.
-- Polir mensagens, persistência e UX para bases grandes.
+- Revisar persistência nativa do Tauri.
+- Refinar UX para bases muito grandes.
 
 ## 3. Decisões consolidadas
 - Stack base: React + TypeScript + Vite.
@@ -67,19 +70,20 @@ Responsável por:
 
 ## 5. Próxima fase de implementação
 
-### Fase 5 - Console SQL avançado
-Objetivo: tornar o console uma ferramenta de exploração real, não apenas executor com log.
+### Fase 7 - Validação desktop e persistência Tauri
+Objetivo: validar o caminho nativo em runtime real e fechar as lacunas de persistência desktop.
 
 #### Escopo
-- exibir resultado tabular da última query
-- melhorar feedback visual de erro/sucesso
-- manter histórico navegável
-- preparar base para atalhos de teclado
+- rodar `tauri:dev` com bases pequenas e grandes
+- revisar `persist_current_database`
+- confirmar comportamento do backend `Auto / Browser / Tauri`
+- observar gargalos com bases muito grandes
 
 #### Critérios de aceite
-- usuário executa `SELECT` e vê resultado tabular no console
-- erro de query aparece com mensagem clara
-- histórico continua registrando duração e contagem de linhas
+- `/Users/yuri/Downloads/fipe_vehicles.db` abre no Tauri
+- `/Users/yuri/Downloads/fipe_full.db` abre no Tauri
+- salvar no modo Tauri tem comportamento validado
+- diferenças entre Browser e Tauri ficam claras na UX
 
 ## 6. Riscos atuais e mitigação
 - Browser ainda falha com DB muito grande (`SQLITE_CANTOPEN`):

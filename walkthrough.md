@@ -103,8 +103,6 @@
 - Tauri está preparado no código, mas a validação end-to-end segue pendente.
 - O bloqueio operacional atual continua sendo espaço em disco insuficiente para concluir `npm run tauri:dev`.
 
-## Próxima fase recomendada
-
 ## Fase 4 - CRUD e inspeção de dados
 
 ### O que foi feito
@@ -125,9 +123,36 @@
 - `src-tauri/src/main.rs`
 - `src-tauri/src/sqlite.rs`
 
+## Fase 5 - Console SQL avançado
+
+### O que foi feito
+- Resultado tabular da última query exibido no painel inferior.
+- Histórico passou a mostrar status, duração e mensagens de erro.
+- Atalho `Ctrl/Cmd + Enter` adicionado para executar SQL.
+- Estado da sessão passou a armazenar o último resultado e o status de execução da query.
+
+### Arquivos principais
+- `src/app/session/types.ts`
+- `src/app/session/session-provider.tsx`
+- `src/features/workspace/sql-console-pane.tsx`
+
+## Fase 6 - Polimento e robustez
+
+### O que foi feito
+- `TopBar` passou a destacar visualmente estados `ready` e `error`.
+- Grade agora exibe feedback de loading durante paginação.
+- Tabelas sem chave primária ou `rowid` acessível mostram aviso explícito de modo inspeção.
+- Feedback de `read-only` ficou mais visível no workspace.
+- Altura do console foi ampliada para acomodar resultados tabulares sem comprimir demais a grade principal.
+
+### Arquivos principais
+- `src/features/workspace/top-bar.tsx`
+- `src/features/workspace/data-grid-pane.tsx`
+- `src/features/workspace/workspace-shell.tsx`
+
 ## Próxima fase recomendada
 
-### Fase 5 - Console SQL avançado
-- Exibir resultado tabular da última query no painel inferior.
-- Melhorar o histórico com erro/sucesso e detalhes.
-- Adicionar atalhos úteis de execução e foco.
+### Fase 7 - Validação desktop e persistência Tauri
+- Validar o runtime Tauri com bancos reais grandes e pequenos.
+- Revisar `persist_current_database`.
+- Refinar comportamento para bases muito grandes e cenários de benchmark.

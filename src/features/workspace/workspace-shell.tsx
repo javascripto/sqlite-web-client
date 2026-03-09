@@ -25,7 +25,7 @@ export function WorkspaceShell() {
         <section
           className={cn(
             'grid min-h-0 overflow-hidden',
-            isSqlConsoleVisible ? 'grid-rows-[1fr_240px]' : 'grid-rows-[1fr]',
+            isSqlConsoleVisible ? 'grid-rows-[1fr_320px]' : 'grid-rows-[1fr]',
           )}
         >
           <div

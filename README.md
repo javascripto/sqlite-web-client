@@ -20,6 +20,10 @@ SQLite viewer/editor inspirado no TablePlus, construído com React + TypeScript 
 - Listagem real de objetos a partir de `sqlite_master`.
 - Paginação real da grade.
 - Execução real de SQL.
+- Resultado tabular da última query no console.
+- Histórico de queries com status e duração.
+- Atalho `Ctrl/Cmd + Enter` para executar SQL.
+- CRUD básico na grade: `INSERT`, `UPDATE` e `DELETE`.
 - Sincronização do banco do OPFS de volta para o arquivo local.
 - Base híbrida Browser/Tauri com seletor de backend `Auto / Browser / Tauri`.
 
@@ -65,8 +69,10 @@ Observação: no ambiente atual já houve bloqueio por falta de espaço em disco
   - tema
   - fluxo browser com SQLite real
   - base do modo híbrido Browser/Tauri
+  - CRUD na grade
+  - console SQL avançado
+  - polimento inicial de loading/erro/read-only
 - Próximo:
-  - CRUD inline na grade
-  - `INSERT`, `UPDATE` e `DELETE`
-  - inspeção de chave primária / `rowid`
-  - melhor feedback para bases grandes
+  - validação end-to-end do runtime Tauri
+  - revisão da persistência nativa (`persist_current_database`)
+  - benchmark/UX para bases muito grandes
