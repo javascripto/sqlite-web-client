@@ -105,8 +105,29 @@
 
 ## Próxima fase recomendada
 
-### Fase 4 - CRUD e inspeção de dados
-- Adicionar edição inline na grade.
-- Implementar `INSERT`, `UPDATE` e `DELETE`.
-- Resolver estratégia de identificação por chave primária ou `rowid`.
-- Fazer refresh granular da página após mutações.
+## Fase 4 - CRUD e inspeção de dados
+
+### O que foi feito
+- Detecção automática de identificador da linha:
+  - chave primária quando disponível
+  - fallback para `rowid` quando suportado
+- Edição inline de célula na grade com persistência real.
+- Inserção de linha por modal simples.
+- Exclusão da linha selecionada com confirmação.
+- Refresh da página da tabela após `INSERT`, `UPDATE` e `DELETE`.
+- Fluxo implementado tanto no backend Browser (`sqlite-wasm`) quanto no backend Tauri (`rusqlite`).
+
+### Arquivos principais
+- `src/features/workspace/data-grid-pane.tsx`
+- `src/app/session/session-provider.tsx`
+- `src/features/sqlite/sqlite-engine.ts`
+- `src/features/sqlite/tauri-sqlite-client.ts`
+- `src-tauri/src/main.rs`
+- `src-tauri/src/sqlite.rs`
+
+## Próxima fase recomendada
+
+### Fase 5 - Console SQL avançado
+- Exibir resultado tabular da última query no painel inferior.
+- Melhorar o histórico com erro/sucesso e detalhes.
+- Adicionar atalhos úteis de execução e foco.

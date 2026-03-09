@@ -230,6 +230,8 @@ interface SessionContextValue {
     columnName: string,
     nextValue: string | number | null,
   ) => Promise<void>;
+  insertRow: (values: Record<string, string | number | null>) => Promise<void>;
+  deleteSelectedRow: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(
@@ -685,6 +687,106 @@ export function SessionProvider({ children }: PropsWithChildren) {
     ],
   );
 
+  const insertRow = useCallback(
+    async (values: Record<string, string | number | null>) => {
+      if (
+        state.openStatus !== 'ready' ||
+        !state.activeObject ||
+        !state.activeTableData
+      ) {
+        toast.error('Abra uma tabela antes de inserir dados.');
+        return;
+      }
+
+      try {
+        if (backendModeRef.current === 'tauri') {
+          await getTauriClient().insertRow(state.activeObject, values);
+        } else {
+          await getEngine().insertRow(state.activeObject, values);
+        }
+
+        await loadTableData(state.activeObject, state.page, state.pageSize);
+        toast.success('Linha inserida.');
+      } catch (error) {
+        const message = extractErrorMessage(error, 'Erro ao inserir linha');
+        toast.error('Erro ao inserir linha', { description: message });
+      }
+    },
+    [
+      getEngine,
+      getTauriClient,
+      loadTableData,
+      state.activeObject,
+      state.activeTableData,
+      state.openStatus,
+      state.page,
+      state.pageSize,
+    ],
+  );
+
+  const deleteSelectedRow = useCallback(async () => {
+    if (
+      state.openStatus !== 'ready' ||
+      !state.activeObject ||
+      !state.activeTableData
+    ) {
+      toast.error('Abra uma tabela antes de excluir dados.');
+      return;
+    }
+
+    const identifier = state.activeTableData.identifier;
+    if (identifier.kind === 'none') {
+      toast.error(
+        'Tabela sem chave primária ou rowid acessível. Exclusão não suportada.',
+      );
+      return;
+    }
+
+    if (state.selectedRowIndex === null) {
+      toast.error('Selecione uma linha para excluir.');
+      return;
+    }
+
+    const localIndex = state.selectedRowIndex - state.page * state.pageSize;
+    const row = state.activeTableData.rows[localIndex];
+
+    if (!row) {
+      toast.error('A linha selecionada não está disponível na página atual.');
+      return;
+    }
+
+    try {
+      if (backendModeRef.current === 'tauri') {
+        await getTauriClient().deleteRow(state.activeObject, row, identifier);
+      } else {
+        await getEngine().deleteRow(state.activeObject, identifier, row);
+      }
+
+      const nextTotalRows = Math.max(state.activeTableData.totalRows - 1, 0);
+      const maxPage = Math.max(
+        Math.ceil(nextTotalRows / state.pageSize) - 1,
+        0,
+      );
+      const targetPage = Math.min(state.page, maxPage);
+      dispatch({ type: 'SET_PAGE', payload: targetPage });
+      await loadTableData(state.activeObject, targetPage, state.pageSize);
+      toast.success('Linha excluída.');
+    } catch (error) {
+      const message = extractErrorMessage(error, 'Erro ao excluir linha');
+      toast.error('Erro ao excluir linha', { description: message });
+    }
+  }, [
+    getEngine,
+    getTauriClient,
+    loadTableData,
+    state.activeObject,
+    state.activeTableData,
+    state.openStatus,
+    state.page,
+    state.pageSize,
+    state.selectedRowIndex,
+  ]);
+
   useEffect(() => {
     (async () => {
       if (!isFileSystemAccessSupported()) {
@@ -725,8 +827,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setPage,
       runSql,
       updateCell,
+      insertRow,
+      deleteSelectedRow,
     }),
     [
+      deleteSelectedRow,
+      insertRow,
       openDatabase,
       runSql,
       selectObject,

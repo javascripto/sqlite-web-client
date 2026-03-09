@@ -1,9 +1,34 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronLeft, ChevronRight, Columns3, Filter } from 'lucide-react';
-import { useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  Filter,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useActiveTableData, useSession } from '@/app/session/session-provider';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +64,8 @@ export function DataGridPane() {
     dispatch,
     setPage,
     updateCell,
+    insertRow,
+    deleteSelectedRow,
   } = useSession();
 
   const tableData = useActiveTableData();
@@ -55,6 +82,12 @@ export function DataGridPane() {
     Boolean(activeObject && identifier) &&
     !isReadOnly &&
     identifier?.kind !== 'none';
+  const canInsertRows = Boolean(activeObject && tableData) && !isReadOnly;
+  const canDeleteRows = canEditRows && selectedRowIndex !== null;
+  const selectedLocalIndex =
+    selectedRowIndex === null ? null : selectedRowIndex - pageStart;
+  const selectedRow =
+    selectedLocalIndex === null ? null : (rows[selectedLocalIndex] ?? null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [editingCell, setEditingCell] = useState<{
@@ -62,6 +95,53 @@ export function DataGridPane() {
     columnName: string;
   } | null>(null);
   const [draftValue, setDraftValue] = useState('');
+  const [isInsertDialogOpen, setIsInsertDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [insertDraft, setInsertDraft] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isInsertDialogOpen || !columns.length) {
+      return;
+    }
+
+    setInsertDraft(current => {
+      const nextDraft = { ...current };
+      for (const column of columns) {
+        nextDraft[column] ??= '';
+      }
+      return nextDraft;
+    });
+  }, [columns, isInsertDialogOpen]);
+
+  useEffect(() => {
+    if (!editingCell) {
+      return;
+    }
+
+    const rowStillVisible = rows.some(
+      (_, index) => pageStart + index === editingCell.rowIndex,
+    );
+    const columnStillVisible = columns.includes(editingCell.columnName);
+
+    if (rowStillVisible && columnStillVisible) {
+      return;
+    }
+
+    setEditingCell(null);
+    setDraftValue('');
+  }, [columns, editingCell, pageStart, rows]);
+
+  const handleInsertSubmit = async () => {
+    const values = Object.fromEntries(
+      Object.entries(insertDraft)
+        .filter(([, value]) => value.trim() !== '')
+        .map(([column, value]) => [column, parseEditedValue(value, null)]),
+    );
+
+    await insertRow(values);
+    setIsInsertDialogOpen(false);
+    setInsertDraft({});
+  };
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -95,6 +175,26 @@ export function DataGridPane() {
           ) : null}
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 bg-background text-xs hover:bg-accent"
+            onClick={() => setIsInsertDialogOpen(true)}
+            disabled={!canInsertRows}
+          >
+            <Plus className="size-3.5" />
+            Insert
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 bg-background text-xs hover:bg-accent"
+            onClick={() => setIsDeleteDialogOpen(true)}
+            disabled={!canDeleteRows}
+          >
+            <Trash2 className="size-3.5" />
+            Delete
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -274,7 +374,7 @@ export function DataGridPane() {
         <p>
           {selectedRowIndex === null
             ? 'No row selected'
-            : `Row ${selectedRowIndex + 1} selected${canEditRows ? ' | double click to edit' : ''}`}
+            : `Row ${selectedRowIndex + 1} selected${canEditRows ? ' | double click to edit' : ''}${canDeleteRows ? ' | delete enabled' : ''}`}
         </p>
         <div className="flex items-center gap-2">
           <p>
@@ -300,6 +400,83 @@ export function DataGridPane() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={isInsertDialogOpen}
+        onOpenChange={setIsInsertDialogOpen}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Insert row</DialogTitle>
+            <DialogDescription>
+              Preencha somente as colunas desejadas. Campo vazio será omitido do
+              `INSERT`. Use `NULL` para gravar valor nulo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[60vh] gap-3 overflow-auto pr-1 sm:grid-cols-2">
+            {columns.map(column => (
+              <label
+                key={column}
+                htmlFor={`insert-${column}`}
+                className="grid gap-1"
+              >
+                <span className="text-xs text-muted-foreground">{column}</span>
+                <Input
+                  id={`insert-${column}`}
+                  value={insertDraft[column] ?? ''}
+                  onChange={event =>
+                    setInsertDraft(current => ({
+                      ...current,
+                      [column]: event.target.value,
+                    }))
+                  }
+                  className="h-8 bg-background text-xs"
+                />
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsInsertDialogOpen(false);
+                setInsertDraft({});
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleInsertSubmit()}>
+              Insert row
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected row?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedRow
+                ? 'A exclusão usa a chave primária ou rowid da linha selecionada e não pode ser desfeita.'
+                : 'Selecione uma linha antes de excluir.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={!selectedRow}
+              onClick={() => void deleteSelectedRow()}
+            >
+              Delete row
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

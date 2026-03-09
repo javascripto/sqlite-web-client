@@ -18,7 +18,6 @@ Construir uma aplicação web estilo TablePlus para SQLite, com navegação de s
 
 ### Pendente
 - Validar Tauri com bancos reais grandes.
-- Implementar CRUD na grade.
 - Exibir resultado tabular da query SQL.
 - Polir mensagens, persistência e UX para bases grandes.
 
@@ -68,21 +67,19 @@ Responsável por:
 
 ## 5. Próxima fase de implementação
 
-### Fase 4 - CRUD e inspeção de dados
-Objetivo: sair de um visualizador/executor SQL para um editor operacional.
+### Fase 5 - Console SQL avançado
+Objetivo: tornar o console uma ferramenta de exploração real, não apenas executor com log.
 
 #### Escopo
-- edição inline de células
-- inserção e exclusão de linhas
-- detecção de chave primária e fallback para `rowid`
-- persistência das mutações no backend ativo
-- recarga granular da página/tabela
+- exibir resultado tabular da última query
+- melhorar feedback visual de erro/sucesso
+- manter histórico navegável
+- preparar base para atalhos de teclado
 
 #### Critérios de aceite
-- usuário consegue editar ao menos uma célula e salvar
-- usuário consegue inserir e deletar uma linha
-- fluxo funciona em `Browser` e `Tauri`
-- grade reflete mutações sem precisar reabrir o banco
+- usuário executa `SELECT` e vê resultado tabular no console
+- erro de query aparece com mensagem clara
+- histórico continua registrando duração e contagem de linhas
 
 ## 6. Riscos atuais e mitigação
 - Browser ainda falha com DB muito grande (`SQLITE_CANTOPEN`):

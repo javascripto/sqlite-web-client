@@ -25,6 +25,8 @@ export interface SqliteTablePage {
   };
 }
 
+type SqlValue = string | number | null;
+
 type WorkerResponse = Record<string, unknown>;
 
 type WorkerPromiser = (
@@ -283,9 +285,9 @@ export class SqliteEngine {
   async updateCell(
     tableName: string,
     identifier: SqliteTablePage['identifier'],
-    row: Record<string, string | number | null>,
+    row: Record<string, SqlValue>,
     columnName: string,
-    value: string | number | null,
+    value: SqlValue,
   ) {
     const quotedTable = quoteIdent(tableName);
     const quotedColumn = quoteIdent(columnName);
@@ -295,6 +297,40 @@ export class SqliteEngine {
     await this.execRows(
       `UPDATE ${quotedTable} SET ${quotedColumn} = ? WHERE ${whereClause}`,
       setBind,
+    );
+  }
+
+  async insertRow(tableName: string, values: Record<string, SqlValue>) {
+    const entries = Object.entries(values);
+    const quotedTable = quoteIdent(tableName);
+
+    if (entries.length === 0) {
+      await this.execRows(`INSERT INTO ${quotedTable} DEFAULT VALUES`);
+      return;
+    }
+
+    const columns = entries.map(([column]) => quoteIdent(column)).join(', ');
+    const placeholders = entries.map(() => '?').join(', ');
+    const bind = entries.map(([, value]) => value);
+
+    await this.execRows(
+      `INSERT INTO ${quotedTable} (${columns}) VALUES (${placeholders})`,
+      bind,
+    );
+  }
+
+  async deleteRow(
+    tableName: string,
+    identifier: SqliteTablePage['identifier'],
+    row: Record<string, SqlValue>,
+  ) {
+    const quotedTable = quoteIdent(tableName);
+    const bind: SqlValue[] = [];
+    const whereClause = this.buildWhereClause(identifier, row, bind);
+
+    await this.execRows(
+      `DELETE FROM ${quotedTable} WHERE ${whereClause}`,
+      bind,
     );
   }
 
@@ -350,8 +386,8 @@ export class SqliteEngine {
 
   private buildWhereClause(
     identifier: SqliteTablePage['identifier'],
-    row: Record<string, string | number | null>,
-    bindValues: Array<string | number | null>,
+    row: Record<string, SqlValue>,
+    bindValues: SqlValue[],
   ) {
     if (identifier.kind === 'none' || identifier.keyColumns.length === 0) {
       throw new Error(

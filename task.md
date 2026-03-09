@@ -32,11 +32,11 @@
   - [x] Ajustar UX de abrir/salvar conforme backend ativo
   - [ ] Validar runtime Tauri com bancos reais grandes e pequenos
 - [ ] Fase 4 - CRUD e inspeção de dados
-  - [ ] Edição inline de célula
-  - [ ] Inserção de linha
-  - [ ] Exclusão de linha
-  - [ ] Estratégia de identificação por chave primária / `rowid`
-  - [ ] Refresh granular após mutações
+  - [x] Edição inline de célula
+  - [x] Inserção de linha
+  - [x] Exclusão de linha
+  - [x] Estratégia de identificação por chave primária / `rowid`
+  - [x] Refresh granular após mutações
 - [ ] Fase 5 - Console SQL avançado
   - [ ] Exibir resultado tabular da última query
   - [ ] Histórico com erro/sucesso expandível

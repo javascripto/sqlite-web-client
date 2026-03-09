@@ -72,6 +72,34 @@ export class TauriSqliteClient {
     });
   }
 
+  async insertRow(
+    tableName: string,
+    values: Record<string, string | number | null>,
+  ) {
+    const invoke = await getInvoke();
+    return invoke<void>('insert_row', {
+      payload: {
+        tableName,
+        values,
+      },
+    });
+  }
+
+  async deleteRow(
+    tableName: string,
+    row: Record<string, string | number | null>,
+    identifier: SqliteTablePage['identifier'],
+  ) {
+    const invoke = await getInvoke();
+    return invoke<void>('delete_row', {
+      payload: {
+        tableName,
+        row,
+        identifier,
+      },
+    });
+  }
+
   async persistCurrentDatabase() {
     const invoke = await getInvoke();
     return invoke<void>('persist_current_database');

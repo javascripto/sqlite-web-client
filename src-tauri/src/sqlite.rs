@@ -60,6 +60,21 @@ pub struct RowIdentifierPayload {
     pub key_columns: Vec<String>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsertRowRequest {
+    pub table_name: String,
+    pub values: Map<String, Value>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRowRequest {
+    pub table_name: String,
+    pub row: Map<String, Value>,
+    pub identifier: RowIdentifierPayload,
+}
+
 fn open_connection_from_state(state: &State<AppState>) -> Result<Connection, String> {
     let guard = state.db_path.lock().map_err(|_| "Failed to lock db path state".to_string())?;
     let path = guard
@@ -165,6 +180,31 @@ fn resolve_row_identifier(connection: &Connection, table_name: &str) -> Result<R
     })
 }
 
+fn build_where_clause(
+    identifier: &RowIdentifierPayload,
+    row: &Map<String, Value>,
+    params: &mut Vec<rusqlite::types::Value>,
+) -> Result<String, String> {
+    if identifier.kind == "none" || identifier.key_columns.is_empty() {
+        return Err("Table without primary key or accessible rowid. Editing is not supported.".into());
+    }
+
+    let mut clauses = Vec::new();
+    for key in &identifier.key_columns {
+        let row_value = row
+            .get(key)
+            .ok_or_else(|| format!("Missing key column in row payload: {key}"))?;
+        params.push(json_to_rusqlite_value(row_value));
+        clauses.push(if identifier.kind == "rowid" {
+            "rowid = ?".to_string()
+        } else {
+            format!("{} = ?", quote_identifier(key))
+        });
+    }
+
+    Ok(clauses.join(" AND "))
+}
+
 #[tauri::command]
 pub fn open_database(path: Option<String>, state: State<AppState>) -> Result<OpenDatabaseResult, String> {
     let selected_path = if let Some(path) = path {
@@ -257,11 +297,15 @@ pub fn query_table_page(
         .prepare(&data_sql)
         .map_err(|e| format!("Failed to prepare table page query: {e}"))?;
 
-    let column_names = stmt
+    let all_column_names = stmt
         .column_names()
         .iter()
-        .filter(|name| Some(name.to_string()) != identifier.hidden_column)
         .map(|name| name.to_string())
+        .collect::<Vec<_>>();
+    let column_names = all_column_names
+        .iter()
+        .filter(|name| Some((*name).clone()) != identifier.hidden_column)
+        .cloned()
         .collect::<Vec<_>>();
 
     let mut rows_cursor = stmt
@@ -274,7 +318,11 @@ pub fn query_table_page(
         .map_err(|e| format!("Failed to iterate table page rows: {e}"))?
     {
         let mut row_json = Map::new();
-        for (index, column_name) in column_names.iter().enumerate() {
+        for (index, column_name) in all_column_names.iter().enumerate() {
+            if Some(column_name.clone()) == identifier.hidden_column {
+                continue;
+            }
+
             let value = row
                 .get_ref(index)
                 .map_err(|e| format!("Failed to read row value: {e}"))?;
@@ -349,39 +397,68 @@ pub fn run_sql(sql: String, state: State<AppState>) -> Result<Vec<Map<String, Va
 pub fn update_cell(payload: UpdateCellRequest, state: State<AppState>) -> Result<(), String> {
     let connection = open_connection_from_state(&state)?;
 
-    if payload.identifier.kind == "none" || payload.identifier.key_columns.is_empty() {
-        return Err("Table without primary key or accessible rowid. Editing is not supported.".into());
-    }
-
     let quoted_table = quote_identifier(&payload.table_name);
     let quoted_column = quote_identifier(&payload.column_name);
 
     let mut params = vec![json_to_rusqlite_value(&payload.value)];
-    let mut clauses = Vec::new();
-
-    for key in &payload.identifier.key_columns {
-        let row_value = payload
-            .row
-            .get(key)
-            .ok_or_else(|| format!("Missing key column in row payload: {key}"))?;
-
-        params.push(json_to_rusqlite_value(row_value));
-        let clause = if payload.identifier.kind == "rowid" {
-            "rowid = ?".to_string()
-        } else {
-            format!("{} = ?", quote_identifier(key))
-        };
-        clauses.push(clause);
-    }
+    let where_clause = build_where_clause(&payload.identifier, &payload.row, &mut params)?;
 
     let sql = format!(
         "UPDATE {quoted_table} SET {quoted_column} = ? WHERE {}",
-        clauses.join(" AND ")
+        where_clause
     );
 
     connection
         .execute(&sql, rusqlite::params_from_iter(params))
         .map_err(|e| format!("Failed to update cell: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn insert_row(payload: InsertRowRequest, state: State<AppState>) -> Result<(), String> {
+    let connection = open_connection_from_state(&state)?;
+    let quoted_table = quote_identifier(&payload.table_name);
+
+    if payload.values.is_empty() {
+        let sql = format!("INSERT INTO {quoted_table} DEFAULT VALUES");
+        connection
+            .execute(&sql, [])
+            .map_err(|e| format!("Failed to insert row: {e}"))?;
+        return Ok(());
+    }
+
+    let entries = payload.values.iter().collect::<Vec<_>>();
+    let columns = entries
+        .iter()
+        .map(|(key, _)| quote_identifier(key))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let placeholders = entries.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let params = entries
+        .into_iter()
+        .map(|(_, value)| json_to_rusqlite_value(value))
+        .collect::<Vec<_>>();
+
+    let sql = format!("INSERT INTO {quoted_table} ({columns}) VALUES ({placeholders})");
+    connection
+        .execute(&sql, rusqlite::params_from_iter(params))
+        .map_err(|e| format!("Failed to insert row: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_row(payload: DeleteRowRequest, state: State<AppState>) -> Result<(), String> {
+    let connection = open_connection_from_state(&state)?;
+    let quoted_table = quote_identifier(&payload.table_name);
+    let mut params = Vec::new();
+    let where_clause = build_where_clause(&payload.identifier, &payload.row, &mut params)?;
+    let sql = format!("DELETE FROM {quoted_table} WHERE {where_clause}");
+
+    connection
+        .execute(&sql, rusqlite::params_from_iter(params))
+        .map_err(|e| format!("Failed to delete row: {e}"))?;
 
     Ok(())
 }
