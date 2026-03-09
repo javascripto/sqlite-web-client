@@ -22,6 +22,7 @@ import {
   ensureReadPermission,
   ensureReadWritePermission,
   exportOpfsToHandle,
+  getStorageEstimate,
   importHandleToOpfs,
   isFileSystemAccessSupported,
   loadLastFileHandle,
@@ -29,6 +30,10 @@ import {
   saveLastFileHandle,
 } from '@/features/sqlite/fs-access-gateway';
 import { SqliteEngine } from '@/features/sqlite/sqlite-engine';
+import {
+  isTauriRuntime,
+  TauriSqliteClient,
+} from '@/features/sqlite/tauri-sqlite-client';
 
 type SessionAction =
   | { type: 'SET_EXPLORER_SEARCH'; payload: string }
@@ -42,6 +47,7 @@ type SessionAction =
   | { type: 'SET_ACTIVE_TABLE_DATA'; payload: TableData | null }
   | { type: 'SET_LOADING_TABLE_DATA'; payload: boolean }
   | { type: 'SET_OPENING_DATABASE'; payload: boolean }
+  | { type: 'SET_IMPORT_PROGRESS'; payload: number | null }
   | { type: 'SET_OPEN_STATUS'; payload: SessionState['openStatus'] }
   | {
       type: 'SET_DATABASE_META';
@@ -69,6 +75,7 @@ const initialState: SessionState = {
   activeTableData: null,
   isLoadingTableData: false,
   isOpeningDatabase: false,
+  importProgress: null,
   statusMessage: 'Nenhum banco aberto. Selecione um arquivo .db.',
   isExplorerVisible: true,
   isSqlConsoleVisible: true,
@@ -77,6 +84,52 @@ const initialState: SessionState = {
 type StoredFileHandle = NonNullable<
   Awaited<ReturnType<typeof loadLastFileHandle>>
 >;
+
+function extractErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const asRecord = error as Record<string, unknown>;
+
+    const directMessage = asRecord.message;
+    if (typeof directMessage === 'string' && directMessage.trim().length > 0) {
+      return directMessage;
+    }
+
+    const result = asRecord.result;
+    if (result && typeof result === 'object') {
+      const resultMessage = (result as Record<string, unknown>).message;
+      if (
+        typeof resultMessage === 'string' &&
+        resultMessage.trim().length > 0
+      ) {
+        return resultMessage;
+      }
+    }
+
+    const cause = asRecord.cause;
+    if (cause && typeof cause === 'object') {
+      const causeMessage = (cause as Record<string, unknown>).message;
+      if (typeof causeMessage === 'string' && causeMessage.trim().length > 0) {
+        return causeMessage;
+      }
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
 
 function sessionReducer(
   state: SessionState,
@@ -126,6 +179,8 @@ function sessionReducer(
       return { ...state, isLoadingTableData: action.payload };
     case 'SET_OPENING_DATABASE':
       return { ...state, isOpeningDatabase: action.payload };
+    case 'SET_IMPORT_PROGRESS':
+      return { ...state, importProgress: action.payload };
     case 'SET_OPEN_STATUS':
       return { ...state, openStatus: action.payload };
     case 'SET_DATABASE_META':
@@ -163,7 +218,11 @@ const SessionContext = createContext<SessionContextValue | undefined>(
 export function SessionProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(sessionReducer, initialState);
   const sqliteEngineRef = useRef<SqliteEngine | null>(null);
+  const tauriClientRef = useRef<TauriSqliteClient | null>(null);
   const fileHandleRef = useRef<StoredFileHandle | null>(null);
+  const activeOpfsFilenameRef = useRef(ACTIVE_OPFS_FILENAME);
+  const readOnlyModeRef = useRef(false);
+  const backendModeRef = useRef<'browser' | 'tauri' | null>(null);
 
   const getEngine = useCallback(() => {
     if (!sqliteEngineRef.current) {
@@ -173,25 +232,38 @@ export function SessionProvider({ children }: PropsWithChildren) {
     return sqliteEngineRef.current;
   }, []);
 
+  const getTauriClient = useCallback(() => {
+    if (!tauriClientRef.current) {
+      tauriClientRef.current = new TauriSqliteClient();
+    }
+
+    return tauriClientRef.current;
+  }, []);
+
   const loadTableData = useCallback(
     async (tableName: string, page: number, pageSize: number) => {
-      const engine = getEngine();
-
       dispatch({ type: 'SET_LOADING_TABLE_DATA', payload: true });
 
       try {
-        const tableData = await engine.queryTablePage(
-          tableName,
-          pageSize,
-          page * pageSize,
-        );
+        const tableData =
+          backendModeRef.current === 'tauri'
+            ? await getTauriClient().queryTablePage(
+                tableName,
+                pageSize,
+                page * pageSize,
+              )
+            : await getEngine().queryTablePage(
+                tableName,
+                pageSize,
+                page * pageSize,
+              );
 
         dispatch({ type: 'SET_ACTIVE_TABLE_DATA', payload: tableData });
       } finally {
         dispatch({ type: 'SET_LOADING_TABLE_DATA', payload: false });
       }
     },
-    [getEngine],
+    [getEngine, getTauriClient],
   );
 
   const selectObject = useCallback(
@@ -216,42 +288,127 @@ export function SessionProvider({ children }: PropsWithChildren) {
   );
 
   const openDatabase = useCallback(async () => {
-    if (!isFileSystemAccessSupported()) {
-      toast.error(
-        'Seu browser não suporta File System Access API nesta sessão.',
-      );
-      return;
-    }
-
     dispatch({ type: 'SET_OPENING_DATABASE', payload: true });
+    dispatch({ type: 'SET_IMPORT_PROGRESS', payload: 0 });
     dispatch({ type: 'SET_OPEN_STATUS', payload: 'idle' });
     dispatch({
       type: 'SET_STATUS_MESSAGE',
       payload: 'Abrindo arquivo SQLite...',
     });
 
-    try {
-      const fileHandle = await pickDatabaseFileHandle();
-      const hasReadWritePermission =
-        await ensureReadWritePermission(fileHandle);
+    let importedContext: {
+      opfsPath: string;
+      sourceSize: number;
+      opfsSize: number;
+    } | null = null;
 
-      if (!hasReadWritePermission) {
+    try {
+      if (isTauriRuntime()) {
+        backendModeRef.current = 'tauri';
+        readOnlyModeRef.current = false;
+
+        const tauriClient = getTauriClient();
+        const openResult = await tauriClient.openDatabase();
+        const objects = await tauriClient.listObjects();
+
+        dispatch({
+          type: 'SET_DATABASE_META',
+          payload: {
+            databaseName: openResult.databaseName,
+            sqliteVersion: openResult.sqliteVersion,
+          },
+        });
+        dispatch({
+          type: 'SET_OBJECTS',
+          payload: objects.map(obj => ({ ...obj, estimatedRows: null })),
+        });
+
+        const firstTable =
+          objects.find(obj => obj.type === 'table')?.name ??
+          objects[0]?.name ??
+          null;
+
+        if (firstTable) {
+          dispatch({ type: 'SELECT_OBJECT', payload: firstTable });
+          await loadTableData(firstTable, 0, state.pageSize);
+        } else {
+          dispatch({ type: 'SET_ACTIVE_TABLE_DATA', payload: null });
+        }
+
+        dispatch({
+          type: 'SET_STATUS_MESSAGE',
+          payload: `Arquivo aberto (Tauri): ${openResult.databaseName}`,
+        });
+        dispatch({ type: 'SET_IMPORT_PROGRESS', payload: null });
+
+        toast.success('Banco SQLite aberto via Tauri', {
+          description: openResult.databaseName,
+        });
+        return;
+      }
+
+      if (!isFileSystemAccessSupported()) {
         throw new Error(
-          'Permissão de leitura/escrita não concedida para o arquivo selecionado.',
+          'Seu browser não suporta File System Access API nesta sessão.',
+        );
+      }
+
+      backendModeRef.current = 'browser';
+
+      const fileHandle = await pickDatabaseFileHandle();
+      const hasReadPermission = await ensureReadPermission(fileHandle);
+
+      if (!hasReadPermission) {
+        throw new Error(
+          'Permissão de leitura não concedida para o arquivo selecionado.',
         );
       }
 
       fileHandleRef.current = fileHandle;
       await saveLastFileHandle(fileHandle);
-
-      const imported = await importHandleToOpfs(
-        fileHandle,
-        ACTIVE_OPFS_FILENAME,
-      );
       const engine = getEngine();
-
       await engine.close();
+
+      const file = await fileHandle.getFile();
+      const opfsFilename = `table-plus-${file.lastModified}-${file.size}.db`;
+      const estimate = await getStorageEstimate();
+
+      if (estimate.usage !== null && estimate.quota) {
+        const freeBytes = estimate.quota - estimate.usage;
+        const freeGb = (freeBytes / 1024 / 1024 / 1024).toFixed(2);
+        const sizeGb = (file.size / 1024 / 1024 / 1024).toFixed(2);
+        const recommendedBytes = Math.ceil(file.size * 1.35);
+        const recommendedGb = (recommendedBytes / 1024 / 1024 / 1024).toFixed(
+          2,
+        );
+        dispatch({
+          type: 'SET_STATUS_MESSAGE',
+          payload:
+            freeBytes < recommendedBytes
+              ? `Storage possivelmente insuficiente. Arquivo ${sizeGb} GB, recomendado ~${recommendedGb} GB livres, disponível ${freeGb} GB.`
+              : `Preparando cópia para OPFS (${sizeGb} GB). Livre no browser: ${freeGb} GB.`,
+        });
+      }
+
+      const imported = await importHandleToOpfs(fileHandle, opfsFilename, {
+        onProgress: (copied, total) => {
+          const progress =
+            total > 0 ? Math.min(100, Math.round((copied / total) * 100)) : 0;
+          dispatch({ type: 'SET_IMPORT_PROGRESS', payload: progress });
+          dispatch({
+            type: 'SET_STATUS_MESSAGE',
+            payload: `Copiando banco para OPFS... ${progress}%`,
+          });
+        },
+      });
+      importedContext = {
+        opfsPath: imported.opfsPath,
+        sourceSize: imported.sourceSize,
+        opfsSize: imported.opfsSize,
+      };
+      activeOpfsFilenameRef.current = opfsFilename;
       const openResult = await engine.openOpfsDatabase(imported.opfsPath);
+      readOnlyModeRef.current = openResult.readOnly;
       const objects = await engine.listObjects();
 
       dispatch({
@@ -281,29 +438,53 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
       dispatch({
         type: 'SET_STATUS_MESSAGE',
-        payload: `Arquivo aberto: ${imported.fileName}`,
+        payload: imported.fromCache
+          ? `Arquivo aberto: ${imported.fileName} (cache OPFS reutilizado)${openResult.readOnly ? ' [read-only]' : ''}`
+          : `Arquivo aberto: ${imported.fileName}${openResult.readOnly ? ' [read-only]' : ''}`,
       });
+      dispatch({ type: 'SET_IMPORT_PROGRESS', payload: null });
 
       toast.success('Banco SQLite aberto no browser', {
         description: imported.fileName,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Falha ao abrir banco SQLite';
+      let message = extractErrorMessage(error, 'Falha ao abrir banco SQLite');
+      if (message.includes('SQLITE_CANTOPEN') && importedContext) {
+        const sourceMb = (importedContext.sourceSize / 1024 / 1024).toFixed(1);
+        const opfsMb = (importedContext.opfsSize / 1024 / 1024).toFixed(1);
+        message = `${message} | OPFS: ${importedContext.opfsPath} | size src/opfs: ${sourceMb}/${opfsMb} MB`;
+      }
+      console.error('openDatabase failed', error);
 
       dispatch({ type: 'SET_OPEN_STATUS', payload: 'error' });
       dispatch({ type: 'SET_STATUS_MESSAGE', payload: message });
       dispatch({ type: 'SET_OBJECTS', payload: [] });
       dispatch({ type: 'SET_ACTIVE_TABLE_DATA', payload: null });
       dispatch({ type: 'SELECT_ROW', payload: null });
+      dispatch({ type: 'SET_IMPORT_PROGRESS', payload: null });
+      readOnlyModeRef.current = false;
+      backendModeRef.current = null;
 
       toast.error('Não foi possível abrir o banco', { description: message });
     } finally {
       dispatch({ type: 'SET_OPENING_DATABASE', payload: false });
     }
-  }, [getEngine, loadTableData, state.pageSize]);
+  }, [getEngine, getTauriClient, loadTableData, state.pageSize]);
 
   const syncDatabaseToDisk = useCallback(async () => {
+    if (backendModeRef.current === 'tauri') {
+      await getTauriClient().persistCurrentDatabase();
+      toast.success('Banco salvo no disco (Tauri).');
+      return;
+    }
+
+    if (readOnlyModeRef.current) {
+      toast.error(
+        'Banco aberto em modo somente leitura. Não é possível salvar.',
+      );
+      return;
+    }
+
     if (!fileHandleRef.current) {
       toast.error('Nenhum arquivo local está conectado.');
       return;
@@ -318,10 +499,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    await exportOpfsToHandle(fileHandleRef.current, ACTIVE_OPFS_FILENAME);
+    await exportOpfsToHandle(
+      fileHandleRef.current,
+      activeOpfsFilenameRef.current,
+    );
 
     toast.success('Arquivo sincronizado no disco.');
-  }, []);
+  }, [getTauriClient]);
 
   const runSql = useCallback(async () => {
     if (state.openStatus !== 'ready') {
@@ -330,11 +514,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
 
     const now = new Date();
-    const engine = getEngine();
     const start = performance.now();
 
     try {
-      const rows = await engine.runSql(state.queryText);
+      const rows =
+        backendModeRef.current === 'tauri'
+          ? await getTauriClient().runSql(state.queryText)
+          : await getEngine().runSql(state.queryText);
       const durationMs = Math.round(performance.now() - start);
 
       dispatch({
@@ -357,8 +543,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
         description: `${rows.length.toLocaleString('en-US')} rows em ${durationMs} ms`,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Erro ao executar SQL';
+      const message = extractErrorMessage(error, 'Erro ao executar SQL');
+      console.error('runSql failed', error);
 
       dispatch({
         type: 'RUN_QUERY',
@@ -376,6 +562,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       toast.error('Erro ao executar SQL', { description: message });
     }
   }, [
+    getTauriClient,
     getEngine,
     loadTableData,
     state.activeObject,

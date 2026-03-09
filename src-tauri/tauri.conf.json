@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Table Plus",
+  "version": "0.1.0",
+  "identifier": "com.yuri.tableplus",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 4173",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:4173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Table Plus",
+        "width": 1400,
+        "height": 900,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}

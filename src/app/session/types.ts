@@ -41,6 +41,7 @@ export interface SessionState {
   activeTableData: TableData | null;
   isLoadingTableData: boolean;
   isOpeningDatabase: boolean;
+  importProgress: number | null;
   statusMessage: string | null;
   isExplorerVisible: boolean;
   isSqlConsoleVisible: boolean;

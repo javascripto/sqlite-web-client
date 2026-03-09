@@ -24,6 +24,7 @@ export function TopBar() {
       isExplorerVisible,
       isSqlConsoleVisible,
       isOpeningDatabase,
+      importProgress,
       statusMessage,
     },
     dispatch,
@@ -32,7 +33,7 @@ export function TopBar() {
   } = useSession();
 
   return (
-    <header className="flex h-12 items-center justify-between border-b border-border bg-card px-3">
+    <header className="relative flex h-12 items-center justify-between border-b border-border bg-card px-3">
       <div className="flex min-w-0 items-center gap-2">
         <Badge
           variant="secondary"
@@ -77,6 +78,14 @@ export function TopBar() {
           <FolderOpenDot className="size-4" />
           {isOpeningDatabase ? 'Abrindo...' : 'Abrir .db'}
         </Button>
+        {isOpeningDatabase && importProgress !== null ? (
+          <Badge
+            variant="outline"
+            className="px-2 py-0.5 text-[10px] tabular-nums"
+          >
+            {importProgress}%
+          </Badge>
+        ) : null}
         <Button
           size="sm"
           variant="outline"
@@ -140,6 +149,15 @@ export function TopBar() {
         </Button>
         <ThemeToggle />
       </div>
+
+      {isOpeningDatabase && importProgress !== null ? (
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-1 bg-muted">
+          <div
+            className="h-full bg-blue-600 transition-[width] duration-150 ease-linear"
+            style={{ width: `${importProgress}%` }}
+          />
+        </div>
+      ) : null}
     </header>
   );
 }
